@@ -263,6 +263,67 @@ if (r8.feasible) {
   );
 }
 
+// 接近双精度边界的录入力臂场景：S 的力臂录入 0.99999999999999999（经 Number()
+// 舍入为 1，与 R 的力臂不可区分），按录入的十进制物理值其首步力矩余量严格为
+// 1e-17，应优先于 R 的 0：必须选 S，返回位置序号 1,0,0,0（按舍入后的 number
+// 计算会把余量抹成 0，按成本错选 R 返回 0,0,0,0）。
+const ultraMarginScenario: Scenario = {
+  rails: [
+    { id: 'R', name: 'R', coordinate: 1, coordinateText: '1' },
+    { id: 'S', name: 'S', coordinate: 0.99999999999999999, coordinateText: '0.99999999999999999' },
+    { id: 'Z1', name: 'Z1', coordinate: 0, coordinateText: '0' },
+    { id: 'Z2', name: 'Z2', coordinate: 0, coordinateText: '0' },
+  ],
+  blocks: [
+    { id: 'b1', name: 'b1', mass: 1, massText: '1', options: [{ railId: 'R', cost: 0 }, { railId: 'S', cost: 1 }] },
+    { id: 'b2', name: 'b2', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+    { id: 'b3', name: 'b3', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+    { id: 'b4', name: 'b4', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+  ],
+  limits: { maxLoad: 4, minTorque: -1, maxTorque: 1, minTorqueText: '-1', maxTorqueText: '1' },
+};
+
+const r9 = adjudicate(ultraMarginScenario);
+check(r9.feasible, '裁决模块：双精度边界力臂场景应判定为可行');
+if (r9.feasible) {
+  const p = r9.plan;
+  check(p.steps.length === 4, '双精度边界：完整方案应覆盖四块配重（每块恰用一次）');
+  check(
+    p.steps.map((s) => s.optionIndex).join(',') === '1,0,0,0',
+    `双精度边界：b1 须选余量严格更高（1e-17）的 S，返回 1,0,0,0（实际 ${p.steps.map((s) => s.optionIndex).join(',')}）`,
+  );
+  check(
+    p.steps.map((s) => `${s.blockIndex}@${s.railId}`).join(' ') === '0@S 1@Z1 2@Z1 3@Z1',
+    '双精度边界：挂装位置与次序应为 b1@S → b2@Z1 → b3@Z1 → b4@Z1',
+  );
+  check(p.totalCost === 1, `双精度边界：总代价应为 1（实际 ${p.totalCost}）`);
+  check(
+    p.minTorqueMargin === 1e-17 && p.steps[0].torqueMargin === 1e-17,
+    `双精度边界：首步及最小力矩余量应严格为 1e-17（实际 ${p.minTorqueMargin}）`,
+  );
+  check(
+    p.steps.every((s) => s.cumulativeMass <= 4 && s.cumulativeTorque >= -1 && s.cumulativeTorque <= 1),
+    '双精度边界：每个前缀状态均满足载荷与力矩闭区间',
+  );
+}
+
+// 双精度边界力臂的并列对照：S 力臂录入 1（与 R 真正相等，余量都是 0），
+// 成本决胜须选零代价的 R，返回 0,0,0,0。
+const ultraMarginTieScenario: Scenario = {
+  ...ultraMarginScenario,
+  rails: ultraMarginScenario.rails.map((r) => (r.id === 'S' ? { ...r, coordinate: 1, coordinateText: '1' } : r)),
+};
+const r10 = adjudicate(ultraMarginTieScenario);
+check(r10.feasible, '裁决模块：双精度边界并列对照场景应判定为可行');
+if (r10.feasible) {
+  check(
+    r10.plan.steps.map((s) => s.optionIndex).join(',') === '0,0,0,0' && r10.plan.totalCost === 0,
+    `双精度边界并列：余量真相等时成本决胜须选 R，返回 0,0,0,0（实际 ${r10.plan.steps
+      .map((s) => s.optionIndex)
+      .join(',')}，代价 ${r10.plan.totalCost}）`,
+  );
+}
+
 // 不可行场景：深度 1 即止步，最深前缀为 b1@R（余量最大），剩余选择同时触发载荷与力矩限制。
 const infeasibleScenario: Scenario = {
   rails: [{ id: 'R', name: 'R', coordinate: 1 }],

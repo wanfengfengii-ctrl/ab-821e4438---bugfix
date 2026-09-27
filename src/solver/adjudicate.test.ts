@@ -325,6 +325,110 @@ describe('adjudicate · 可行方案与决胜规则', () => {
     ]);
   });
 
+  it('接近双精度边界的录入力臂：0.99999999999999999 的 1e-17 余量差优先于成本', () => {
+    // 报告场景：4 块质量均为 1 的配重，4 条导轨。b1 可选 R（力臂 1、代价 0）
+    // 或 S（力臂 0.99999999999999999、代价 1）；b2~b4 均可在两条力臂 0、代价 0
+    // 的导轨间选择。载荷上限 4、力矩区间 [-1,1]，所有位置均满足载荷与力矩限制。
+    // S 的力臂录入值经 Number() 舍入为 1（与 R 不可区分），若按舍入后的 number
+    // 计算，首步力矩余量被抹成 0，成本决胜会错选 R（0,0,0,0）；按录入的十进制
+    // 物理值，选 S 的首步力矩为 0.99999999999999999、余量严格为 1e-17，应优先
+    // 于 R，返回 1,0,0,0。
+    expect(Number('0.99999999999999999')).toBe(1); // 佐证差异在双精度下会丢失
+    const outcome = adjudicate({
+      rails: [
+        { id: 'rail-0', name: 'R', coordinate: 1, coordinateText: '1' },
+        { id: 'rail-1', name: 'S', coordinate: 0.99999999999999999, coordinateText: '0.99999999999999999' },
+        { id: 'rail-2', name: 'Z1', coordinate: 0, coordinateText: '0' },
+        { id: 'rail-3', name: 'Z2', coordinate: 0, coordinateText: '0' },
+      ],
+      blocks: [
+        {
+          id: 'blk-b1',
+          name: 'b1',
+          mass: 1,
+          massText: '1',
+          options: [
+            { railId: 'rail-0', cost: 0, costText: '0' },
+            { railId: 'rail-1', cost: 1, costText: '1' },
+          ],
+        },
+        block('b2', 1, [[2, 0], [3, 0]]),
+        block('b3', 1, [[2, 0], [3, 0]]),
+        block('b4', 1, [[2, 0], [3, 0]]),
+      ],
+      limits: { maxLoad: 4, minTorque: -1, maxTorque: 1, minTorqueText: '-1', maxTorqueText: '1' },
+    });
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    const plan = outcome.plan;
+    // 完整方案：四块各恰用一次，b1 选 S（位置录入序号 #2），其余按序号取 #1
+    expect(plan.steps).toHaveLength(4);
+    expect(new Set(plan.steps.map((s) => s.blockIndex))).toEqual(new Set([0, 1, 2, 3]));
+    expect(plan.steps.map((s) => s.optionIndex)).toEqual([1, 0, 0, 0]);
+    expect(plan.steps.map((s) => [s.blockIndex, s.railName])).toEqual([
+      [0, 'S'],
+      [1, 'Z1'],
+      [2, 'Z1'],
+      [3, 'Z1'],
+    ]);
+    // 总代价严格为 1（S 的代价；1e-17 的真实余量差优先，更高的代价必须被接受）
+    expect(plan.totalCost).toBe(1);
+    // 最小力矩余量严格为 1e-17：1 − 0.99999999999999999 的十进制真值
+    // （不用 toBeCloseTo：容差会把缺陷掩盖掉）
+    expect(plan.minTorqueMargin).toBe(1e-17);
+    expect(plan.minTorqueMargin).toBeGreaterThan(0);
+    // 首步（b1@S）的力矩余量即 1e-17；其力矩的 number 视图舍入回 1（仅展示）
+    expect(plan.steps[0].torqueMargin).toBe(1e-17);
+    expect(plan.steps[0].cumulativeTorque).toBe(1);
+    // 载荷与力矩边界：最终载荷恰为上限 4，各前缀力矩落在 [-1,1] 闭区间内
+    expect(plan.finalMass).toBe(4);
+    for (const s of plan.steps) {
+      expect(s.cumulativeMass).toBeLessThanOrEqual(4 + EPS);
+      expect(s.cumulativeTorque).toBeGreaterThanOrEqual(-1 - EPS);
+      expect(s.cumulativeTorque).toBeLessThanOrEqual(1 + EPS);
+    }
+  });
+
+  it('录入原文下余量确实相等时成本才参与决胜：S 力臂真为 1 时选零代价的 R', () => {
+    // 与上一场景同构，但 S 的力臂录入为 1（与 R 真正相等，余量均为 0）：
+    // 成本决胜应选零代价的 R，返回 0,0,0,0。
+    const outcome = adjudicate({
+      rails: [
+        { id: 'rail-0', name: 'R', coordinate: 1, coordinateText: '1' },
+        { id: 'rail-1', name: 'S', coordinate: 1, coordinateText: '1' },
+        { id: 'rail-2', name: 'Z1', coordinate: 0, coordinateText: '0' },
+        { id: 'rail-3', name: 'Z2', coordinate: 0, coordinateText: '0' },
+      ],
+      blocks: [
+        {
+          id: 'blk-b1',
+          name: 'b1',
+          mass: 1,
+          massText: '1',
+          options: [
+            { railId: 'rail-0', cost: 0, costText: '0' },
+            { railId: 'rail-1', cost: 1, costText: '1' },
+          ],
+        },
+        block('b2', 1, [[2, 0], [3, 0]]),
+        block('b3', 1, [[2, 0], [3, 0]]),
+        block('b4', 1, [[2, 0], [3, 0]]),
+      ],
+      limits: { maxLoad: 4, minTorque: -1, maxTorque: 1, minTorqueText: '-1', maxTorqueText: '1' },
+    });
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.minTorqueMargin).toBe(0);
+    expect(outcome.plan.totalCost).toBe(0);
+    expect(outcome.plan.steps.map((s) => s.optionIndex)).toEqual([0, 0, 0, 0]);
+    expect(outcome.plan.steps.map((s) => [s.blockIndex, s.railName])).toEqual([
+      [0, 'R'],
+      [1, 'Z1'],
+      [2, 'Z1'],
+      [3, 'Z1'],
+    ]);
+  });
+
   it('力矩余量最大优先于总代价最小', () => {
     // 便宜方案（代价 2）余量仅 1；居中方案（代价 20）余量 5，必须选后者。
     const outcome = adjudicate({

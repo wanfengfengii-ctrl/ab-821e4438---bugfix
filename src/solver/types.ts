@@ -3,6 +3,13 @@ export interface RailPosition {
   id: string;
   name: string;
   coordinate: number;
+  /**
+   * 录入力臂的十进制原文（可选）。力矩与力矩余量的精确计算以原文为准：
+   * 接近双精度边界的录入值（如 "0.99999999999999999"）经 Number() 会舍入为 1，
+   * 与 1 的真实差异（1e-17）只能凭原文保留；缺省时退回由 coordinate 的
+   * 最短往返表示恢复。
+   */
+  coordinateText?: string;
 }
 
 /** 某块配重的一个可挂入选项：挂到指定导轨位置的安装代价。 */
@@ -22,6 +29,8 @@ export interface BlockInput {
   id: string;
   name: string;
   mass: number;
+  /** 录入质量的十进制原文（可选），作用同 RailPosition.coordinateText。 */
+  massText?: string;
   /** 可挂入的 2~3 个导轨位置，数组顺序即“位置录入序号”。 */
   options: BlockOptionInput[];
 }
@@ -31,6 +40,9 @@ export interface Limits {
   maxLoad: number;
   minTorque: number;
   maxTorque: number;
+  /** 录入力矩区间端点的十进制原文（可选），作用同 RailPosition.coordinateText。 */
+  minTorqueText?: string;
+  maxTorqueText?: string;
 }
 
 export interface Scenario {

@@ -1,12 +1,13 @@
 /**
  * 精确十进制数：value = coefficient × 10^exponent（coefficient 为任意精度整数）。
  *
- * 安装代价是逐位有意义的录入值，总代价的累计与比较必须按录入的十进制值进行：
+ * 录入值是逐位有意义的十进制数，累计与比较必须按录入的十进制值进行：
  * 0.1 + 0.2 与 0.3 在十进制下相等，必须判为同成本；而 1e-10 与 0 这类
  * 极小但真实的十进制差额又必须保持严格有序。二进制浮点累加两者都做不到
  * （0.1+0.2 === 0.30000000000000004），因此代价的求和与比较全部在此
- * 十进制表示上完成，物理量（质量、力矩）不在此列：载荷/力矩边界判定走浮点
- * + EPS 容差，力矩余量决胜按浮点计算值严格比较（见 ./adjudicate）。
+ * 十进制表示上完成。物理量（质量、力臂、力矩端点）在携带录入原文时同样
+ * 走此表示：0.99999999999999999 经 Number() 会舍入为 1，与 1 之间 1e-17
+ * 的真实差异只能凭十进制原文保留（见 ./adjudicate 的力矩余量决胜）。
  */
 export interface Decimal {
   readonly coefficient: bigint;
@@ -78,6 +79,16 @@ export function decimalAdd(a: Decimal, b: Decimal): Decimal {
     a.coefficient * 10n ** BigInt(a.exponent - exponent) +
     b.coefficient * 10n ** BigInt(b.exponent - exponent);
   return normalize({ coefficient, exponent });
+}
+
+/** 精确乘法（如 质量 × 力臂 的力矩增量）。 */
+export function decimalMultiply(a: Decimal, b: Decimal): Decimal {
+  return normalize({ coefficient: a.coefficient * b.coefficient, exponent: a.exponent + b.exponent });
+}
+
+/** 精确减法（a − b，如 力矩余量 = min(力矩 − 下端, 上端 − 力矩)）。 */
+export function decimalSubtract(a: Decimal, b: Decimal): Decimal {
+  return decimalAdd(a, { coefficient: -b.coefficient, exponent: b.exponent });
 }
 
 /** 精确比较：a < b 返回 -1，a === b 返回 0，a > b 返回 1。 */

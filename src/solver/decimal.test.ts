@@ -5,6 +5,8 @@ import {
   decimalCompare,
   decimalFromNumber,
   decimalFromText,
+  decimalMultiply,
+  decimalSubtract,
   decimalToNumber,
   decimalToString,
 } from './decimal';
@@ -93,5 +95,34 @@ describe('decimal · 录入原文精确解析（decimalFromText）', () => {
     expect(() => t('abc')).toThrow();
     expect(() => t('1.2.3')).toThrow();
     expect(() => t('e5')).toThrow();
+  });
+});
+
+describe('decimal · 精确乘法与减法（力矩与余量）', () => {
+  it('乘法保留全部录入位：1 × 0.99999999999999999 不等于 1', () => {
+    // 双精度下该乘积舍入为 1，差异只能凭十进制保留
+    expect(1 * Number('0.99999999999999999')).toBe(1);
+    const product = decimalMultiply(t('1'), t('0.99999999999999999'));
+    expect(decimalToString(product)).toBe('0.99999999999999999');
+    expect(decimalCompare(product, t('1'))).toBe(-1);
+  });
+
+  it('减法保留边界差异：1 − 0.99999999999999999 严格等于 1e-17', () => {
+    // 双精度下同一减法结果为 0，余量差会被完全抹掉
+    expect(1 - Number('0.99999999999999999')).toBe(0);
+    const diff = decimalSubtract(t('1'), t('0.99999999999999999'));
+    expect(decimalToString(diff)).toBe('0.00000000000000001');
+    expect(decimalCompare(diff, t('1e-17'))).toBe(0);
+    expect(decimalCompare(diff, DECIMAL_ZERO)).toBe(1);
+    expect(decimalToNumber(diff)).toBe(1e-17);
+  });
+
+  it('乘减与常规数值一致，支持负数与零', () => {
+    expect(decimalCompare(decimalMultiply(d(2), d(-0.5)), t('-1'))).toBe(0);
+    expect(decimalCompare(decimalMultiply(d(0.1), d(0.1)), t('0.01'))).toBe(0);
+    expect(decimalCompare(decimalSubtract(d(0.3), d(0.1)), d(0.2))).toBe(0);
+    expect(decimalCompare(decimalSubtract(d(-1), d(1)), t('-2'))).toBe(0);
+    expect(decimalToString(decimalSubtract(d(1), d(1)))).toBe('0');
+    expect(decimalCompare(decimalMultiply(d(5), DECIMAL_ZERO), DECIMAL_ZERO)).toBe(0);
   });
 });

@@ -51,3 +51,58 @@ describe('parseDraft × adjudicate · 录入代价原文贯通', () => {
     expect(outcome.plan.totalCost).toBe(0.1);
   });
 });
+
+/** 报告场景的草稿：R/S/Z1/Z2 四条导轨，b1 可在 R（代价 0）与 S（代价 1）间选择。 */
+function leverDraftOf(sCoordinate: string): Draft {
+  const zero: [string, string] = ['0', '0'];
+  return {
+    rails: [
+      { id: 'R', name: 'R', coordinate: '1' },
+      { id: 'S', name: 'S', coordinate: sCoordinate },
+      { id: 'Z1', name: 'Z1', coordinate: zero[0] },
+      { id: 'Z2', name: 'Z2', coordinate: zero[1] },
+    ],
+    blocks: [
+      { id: 'b1', name: 'b1', mass: '1', options: [{ railId: 'R', cost: '0' }, { railId: 'S', cost: '1' }] },
+      { id: 'b2', name: 'b2', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+      { id: 'b3', name: 'b3', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+      { id: 'b4', name: 'b4', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+    ],
+    maxLoad: '4',
+    minTorque: '-1',
+    maxTorque: '1',
+  };
+}
+
+describe('parseDraft × adjudicate · 录入力臂原文贯通', () => {
+  it('接近双精度边界的力臂经真实录入链路保留：0.99999999999999999 的 1e-17 余量优先于成本', () => {
+    // S 的力臂录入值经 Number() 舍入为 1（与 R 不可区分），差异只能靠草稿原文
+    // 保留；按录入的十进制物理值，选 S 的首步余量严格为 1e-17，应优先于 R。
+    const parsed = parseDraft(leverDraftOf('0.99999999999999999'));
+    expect('scenario' in parsed).toBe(true);
+    if ('errors' in parsed) throw new Error(parsed.errors.join('; '));
+    // 解析出的场景必须携带原文，且 number 视图确实已与 1 不可区分
+    expect(parsed.scenario.rails[1].coordinateText).toBe('0.99999999999999999');
+    expect(parsed.scenario.rails[1].coordinate).toBe(1);
+
+    const outcome = adjudicate(parsed.scenario);
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    // 报告要求：返回 1,0,0,0，b1 选余量严格更高（1e-17）的 S
+    expect(outcome.plan.steps.map((s) => s.optionIndex)).toEqual([1, 0, 0, 0]);
+    expect(outcome.plan.steps[0].railName).toBe('S');
+    expect(outcome.plan.minTorqueMargin).toBe(1e-17);
+    expect(outcome.plan.totalCost).toBe(1);
+  });
+
+  it('力臂真相等（S 录 1）时成本决胜取零代价的 R（0,0,0,0）', () => {
+    const parsed = parseDraft(leverDraftOf('1'));
+    if ('errors' in parsed) throw new Error(parsed.errors.join('; '));
+    const outcome = adjudicate(parsed.scenario);
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.minTorqueMargin).toBe(0);
+    expect(outcome.plan.steps.map((s) => s.optionIndex)).toEqual([0, 0, 0, 0]);
+    expect(outcome.plan.totalCost).toBe(0);
+  });
+});

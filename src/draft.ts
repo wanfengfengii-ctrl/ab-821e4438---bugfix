@@ -73,11 +73,17 @@ export function parseDraft(d: Draft): ParseResult {
       id: r.id,
       name: r.name,
       coordinate: num(r.coordinate, `导轨「${r.name}」的力臂坐标`),
+      // 保留录入原文：接近双精度边界的力臂（如 0.99999999999999999）经 Number()
+      // 会舍入为 1，与 1 的真实差异（1e-17）只能凭原文保留，力矩余量的
+      // 精确计算与决胜以此为准。
+      coordinateText: r.coordinate.trim(),
     })),
     blocks: d.blocks.map((b) => ({
       id: b.id,
       name: b.name,
       mass: num(b.mass, `配重「${b.name}」的质量`),
+      // 保留录入原文：质量的十进制差异同样参与力矩的精确累计。
+      massText: b.mass.trim(),
       options: b.options.map((o) => ({
         railId: o.railId,
         cost: num(o.cost, `配重「${b.name}」的安装代价`),
@@ -90,6 +96,9 @@ export function parseDraft(d: Draft): ParseResult {
       maxLoad: num(d.maxLoad, '卷扬轴总载荷上限'),
       minTorque: num(d.minTorque, '力矩区间下端'),
       maxTorque: num(d.maxTorque, '力矩区间上端'),
+      // 保留录入原文：力矩区间端点的十进制差异同样参与余量的精确计算。
+      minTorqueText: d.minTorque.trim(),
+      maxTorqueText: d.maxTorque.trim(),
     },
   };
   errors.push(...validateScenario(scenario));
