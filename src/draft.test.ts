@@ -51,3 +51,54 @@ describe('parseDraft × adjudicate · 录入代价原文贯通', () => {
     expect(outcome.plan.totalCost).toBe(0.1);
   });
 });
+
+describe('parseDraft × adjudicate · 录入力臂原文贯通', () => {
+  /** 报告场景草稿：R/S/Z1/Z2 四条导轨，力臂由参数给出（原文）。 */
+  function armDraft(rArm: string, sArm: string): Draft {
+    return {
+      rails: [
+        { id: 'R', name: 'R', coordinate: rArm },
+        { id: 'S', name: 'S', coordinate: sArm },
+        { id: 'Z1', name: 'Z1', coordinate: '0' },
+        { id: 'Z2', name: 'Z2', coordinate: '0' },
+      ],
+      blocks: [
+        { id: 'b1', name: 'b1', mass: '1', options: [{ railId: 'R', cost: '0' }, { railId: 'S', cost: '1' }] },
+        { id: 'b2', name: 'b2', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+        { id: 'b3', name: 'b3', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+        { id: 'b4', name: 'b4', mass: '1', options: [{ railId: 'Z1', cost: '0' }, { railId: 'Z2', cost: '0' }] },
+      ],
+      maxLoad: '4',
+      minTorque: '-1',
+      maxTorque: '1',
+    };
+  }
+
+  it('接近双精度边界的力臂录入：0.99999999999999999 保留 1e-17 余量差，选 S 返回 1,0,0,0', () => {
+    const parsed = parseDraft(armDraft('1', '0.99999999999999999'));
+    expect('scenario' in parsed).toBe(true);
+    if ('errors' in parsed) throw new Error(parsed.errors.join('; '));
+    // 原文必须保留，且 number 视图确实已把力臂舍入成同一个 1
+    expect(parsed.scenario.rails[1].coordinateText).toBe('0.99999999999999999');
+    expect(parsed.scenario.rails[1].coordinate).toBe(1);
+
+    const outcome = adjudicate(parsed.scenario);
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.steps.map((s) => s.optionIndex)).toEqual([1, 0, 0, 0]);
+    expect(outcome.plan.steps[0].railName).toBe('S');
+    expect(outcome.plan.totalCost).toBe(1);
+    expect(outcome.plan.minTorqueMargin).toBe(1e-17);
+  });
+
+  it('力臂录入确实相等时（1 与 1）余量为 0，成本决胜选零代价的 R 返回 0,0,0,0', () => {
+    const parsed = parseDraft(armDraft('1', '1'));
+    if ('errors' in parsed) throw new Error(parsed.errors.join('; '));
+    const outcome = adjudicate(parsed.scenario);
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.steps.map((s) => s.optionIndex)).toEqual([0, 0, 0, 0]);
+    expect(outcome.plan.totalCost).toBe(0);
+    expect(outcome.plan.minTorqueMargin).toBe(0);
+  });
+});

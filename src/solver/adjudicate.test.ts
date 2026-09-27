@@ -285,13 +285,67 @@ describe('adjudicate · 可行方案与决胜规则', () => {
     ]);
     // 总代价严格为 1（S 的代价；余量差优先，更高的代价必须被接受）
     expect(plan.totalCost).toBe(1);
-    // 最小力矩余量严格为正，恰为 1 - 0.9999999995（5e-10 级，小于旧容差 EPS）
-    expect(plan.minTorqueMargin).toBe(1 - 0.9999999995);
+    // 最小力矩余量严格为正，恰为按录入十进制值算出的 5e-10（小于旧容差 EPS）。
+    // 注意不能写成 1 - 0.9999999995：该双精度减法带舍入噪声（5.00000041e-10），
+    // 而裁决余量按录入值精确计算，正确舍入结果就是 Number('5e-10')。
+    expect(plan.minTorqueMargin).toBe(0.0000000005);
     expect(plan.minTorqueMargin).toBeGreaterThan(0);
     expect(plan.minTorqueMargin).toBeLessThan(EPS);
     // 载荷与力矩边界：最终载荷恰为上限 4，首步力矩 0.9999999995 落在 [-1,1] 内
     expect(plan.finalMass).toBe(4);
     expect(plan.steps[0].cumulativeTorque).toBe(0.9999999995);
+    for (const s of plan.steps) {
+      expect(s.cumulativeMass).toBeLessThanOrEqual(4 + EPS);
+      expect(s.cumulativeTorque).toBeGreaterThanOrEqual(-1 - EPS);
+      expect(s.cumulativeTorque).toBeLessThanOrEqual(1 + EPS);
+    }
+  });
+
+  it('接近双精度边界的高精度力臂：录入原文保留 1e-17 余量差，S 仍优先于零代价的 R', () => {
+    // 报告场景：R 力臂录入 1、代价 0；S 力臂录入 0.99999999999999999、代价 1；
+    // b2~b4 均可在力臂 0、代价 0 的 Z1、Z2 间选择。载荷上限 4、力矩区间
+    // [-1,1]，所有位置均满足载荷与力矩闭区间。
+    // 关键：Number('0.99999999999999999') === 1，双精度视图下两个力臂已不可
+    // 区分；但按录入的十进制物理值，选 S 的首步力矩余量严格为 1e-17 > 0，
+    // 必须优先于 R，返回 1,0,0,0。安装成本只可在余量确实相等时决胜。
+    expect(Number('0.99999999999999999')).toBe(1); // 佐证差异在双精度下会丢失
+    expect(1 - Number('0.99999999999999999')).toBe(0);
+    const outcome = adjudicate({
+      rails: [
+        { id: 'rail-0', name: 'R', coordinate: 1, coordinateText: '1' },
+        { id: 'rail-1', name: 'S', coordinate: 1, coordinateText: '0.99999999999999999' },
+        { id: 'rail-2', name: 'Z1', coordinate: 0, coordinateText: '0' },
+        { id: 'rail-3', name: 'Z2', coordinate: 0, coordinateText: '0' },
+      ],
+      blocks: [
+        block('b1', 1, [[0, 0], [1, 1]]),
+        block('b2', 1, [[2, 0], [3, 0]]),
+        block('b3', 1, [[2, 0], [3, 0]]),
+        block('b4', 1, [[2, 0], [3, 0]]),
+      ],
+      limits: limits(4, -1, 1),
+    });
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    const plan = outcome.plan;
+    // 完整位置序列：b1 选 S（位置录入序号 #2），其余按序号取 #1
+    expect(plan.steps).toHaveLength(4);
+    expect(new Set(plan.steps.map((s) => s.blockIndex))).toEqual(new Set([0, 1, 2, 3]));
+    expect(plan.steps.map((s) => s.optionIndex)).toEqual([1, 0, 0, 0]);
+    expect(plan.steps.map((s) => [s.blockIndex, s.railName])).toEqual([
+      [0, 'S'],
+      [1, 'Z1'],
+      [2, 'Z1'],
+      [3, 'Z1'],
+    ]);
+    // 总代价严格为 1（真实存在的 1e-17 余量差优先，更高代价必须被接受）
+    expect(plan.totalCost).toBe(1);
+    // 最小力矩余量按录入十进制值精确为 1e-17（双精度舍入视图仍是可表示的 1e-17）
+    expect(plan.minTorqueMargin).toBe(1e-17);
+    expect(plan.minTorqueMargin).toBeGreaterThan(0);
+    // 首步力矩按录入值为 0.99999999999999999（双精度视图舍入为 1），落在闭区间内
+    expect(plan.steps[0].cumulativeTorque).toBe(1);
+    expect(plan.finalMass).toBe(4);
     for (const s of plan.steps) {
       expect(s.cumulativeMass).toBeLessThanOrEqual(4 + EPS);
       expect(s.cumulativeTorque).toBeGreaterThanOrEqual(-1 - EPS);

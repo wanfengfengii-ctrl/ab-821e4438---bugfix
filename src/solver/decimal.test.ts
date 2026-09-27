@@ -5,6 +5,9 @@ import {
   decimalCompare,
   decimalFromNumber,
   decimalFromText,
+  decimalMin,
+  decimalMultiply,
+  decimalSubtract,
   decimalToNumber,
   decimalToString,
 } from './decimal';
@@ -61,6 +64,28 @@ describe('decimal · 精确十进制表示', () => {
     expect(decimalToNumber(decimalAdd(d(0.1), d(0.2)))).toBe(0.3);
     expect(decimalToNumber(d(0))).toBe(0);
     expect(decimalToString(decimalAdd(d(0.1), d(0.2)))).toBe('0.3');
+  });
+
+  it('减法与乘法精确：1 - 0.99999999999999999 严格等于 1e-17', () => {
+    // 双精度下这两个录入值舍入为同一个 1，差异只能凭原文在十进制层保留
+    expect(Number('0.99999999999999999')).toBe(1);
+    const margin = decimalSubtract(t('1'), t('0.99999999999999999'));
+    expect(decimalCompare(margin, t('0.00000000000000001'))).toBe(0);
+    expect(decimalToString(margin)).toBe('0.00000000000000001');
+    expect(decimalToNumber(margin)).toBe(1e-17);
+    // 质量 1 × 力臂 = 力臂本身；负数参与亦正确
+    expect(decimalCompare(decimalMultiply(d(1), t('0.99999999999999999')), t('0.99999999999999999'))).toBe(0);
+    expect(decimalCompare(decimalMultiply(d(2), d(-3)), d(-6))).toBe(0);
+    expect(decimalCompare(decimalMultiply(d(0), d(7)), DECIMAL_ZERO)).toBe(0);
+  });
+
+  it('力矩余量按录入值精确：min(1 - 0.99999999999999999, 0.99999999999999999 - (-1)) = 1e-17', () => {
+    const torque = t('0.99999999999999999');
+    const lo = d(-1);
+    const hi = d(1);
+    const margin = decimalMin(decimalSubtract(torque, lo), decimalSubtract(hi, torque));
+    expect(decimalCompare(margin, t('0.00000000000000001'))).toBe(0);
+    expect(decimalToNumber(margin)).toBe(1e-17);
   });
 });
 

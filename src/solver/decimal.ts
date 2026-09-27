@@ -1,12 +1,14 @@
 /**
  * 精确十进制数：value = coefficient × 10^exponent（coefficient 为任意精度整数）。
  *
- * 安装代价是逐位有意义的录入值，总代价的累计与比较必须按录入的十进制值进行：
- * 0.1 + 0.2 与 0.3 在十进制下相等，必须判为同成本；而 1e-10 与 0 这类
- * 极小但真实的十进制差额又必须保持严格有序。二进制浮点累加两者都做不到
- * （0.1+0.2 === 0.30000000000000004），因此代价的求和与比较全部在此
- * 十进制表示上完成，物理量（质量、力矩）不在此列：载荷/力矩边界判定走浮点
- * + EPS 容差，力矩余量决胜按浮点计算值严格比较（见 ./adjudicate）。
+ * 安装代价与物理录入量（力臂、质量、力矩、力矩余量）都是逐位有意义的录入值，
+ * 其累计与比较必须按录入的十进制值进行：0.1 + 0.2 与 0.3 在十进制下相等，
+ * 必须判为同值；而 1e-10（乃至 1e-17）与 0 这类极小但真实的十进制差额又必须
+ * 保持严格有序。二进制浮点累加两者都做不到（0.1+0.2 === 0.30000000000000004，
+ * Number('0.99999999999999999') === 1），因此代价的求和比较、力矩的累加与
+ * 力矩余量的决胜全部在此十进制表示上完成。唯一的例外是载荷/力矩闭区间的
+ * 可行性判定：仍走双精度 + EPS 容差以吸收无原文时的浮点舍入噪声
+ * （见 ./adjudicate），但该容差绝不参与余量决胜。
  */
 export interface Decimal {
   readonly coefficient: bigint;
@@ -78,6 +80,29 @@ export function decimalAdd(a: Decimal, b: Decimal): Decimal {
     a.coefficient * 10n ** BigInt(a.exponent - exponent) +
     b.coefficient * 10n ** BigInt(b.exponent - exponent);
   return normalize({ coefficient, exponent });
+}
+
+/** 精确减法。 */
+export function decimalSubtract(a: Decimal, b: Decimal): Decimal {
+  const exponent = Math.min(a.exponent, b.exponent);
+  const coefficient =
+    a.coefficient * 10n ** BigInt(a.exponent - exponent) -
+    b.coefficient * 10n ** BigInt(b.exponent - exponent);
+  return normalize({ coefficient, exponent });
+}
+
+/** 精确乘法（力矩 = 质量 × 力臂等）。 */
+export function decimalMultiply(a: Decimal, b: Decimal): Decimal {
+  if (a.coefficient === 0n || b.coefficient === 0n) return DECIMAL_ZERO;
+  return normalize({
+    coefficient: a.coefficient * b.coefficient,
+    exponent: a.exponent + b.exponent,
+  });
+}
+
+/** 精确最小值（沿挂装前缀取最小力矩余量）。 */
+export function decimalMin(a: Decimal, b: Decimal): Decimal {
+  return decimalCompare(a, b) <= 0 ? a : b;
 }
 
 /** 精确比较：a < b 返回 -1，a === b 返回 0，a > b 返回 1。 */

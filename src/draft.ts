@@ -73,6 +73,9 @@ export function parseDraft(d: Draft): ParseResult {
       id: r.id,
       name: r.name,
       coordinate: num(r.coordinate, `导轨「${r.name}」的力臂坐标`),
+      // 保留录入原文：力矩余量的精确比较以此为准，避免 Number() 舍入
+      // 把两个不同的录入值（如 0.99999999999999999 与 1）抹成同一个数。
+      coordinateText: r.coordinate.trim(),
     })),
     blocks: d.blocks.map((b) => ({
       id: b.id,

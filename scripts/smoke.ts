@@ -237,8 +237,8 @@ if (r7.feasible) {
   );
   check(p.totalCost === 1, `亚纳米余量：总代价应为 1（实际 ${p.totalCost}）`);
   check(
-    p.minTorqueMargin > 0 && p.minTorqueMargin === 1 - 0.9999999995,
-    `亚纳米余量：最小力矩余量应严格为正且为 5e-10 级（实际 ${p.minTorqueMargin}）`,
+    p.minTorqueMargin > 0 && p.minTorqueMargin === 5e-10,
+    `亚纳米余量：最小力矩余量应严格为正且为按录入值计算的 5e-10（实际 ${p.minTorqueMargin}）`,
   );
   check(
     p.steps.every((s) => s.cumulativeMass <= 4 && s.cumulativeTorque >= -1 && s.cumulativeTorque <= 1),
@@ -260,6 +260,72 @@ if (r8.feasible) {
     `余量真相等：成本决胜须选零代价的 R，返回 0,0,0,0（实际 ${r8.plan.steps
       .map((s) => s.optionIndex)
       .join(',')}，代价 ${r8.plan.totalCost}）`,
+  );
+}
+
+// 接近双精度边界的高精度力臂场景：R 力臂录入 1、代价 0；S 力臂录入
+// 0.99999999999999999、代价 1；b2~b4 在两条零力臂零代价导轨间选择；载荷上限
+// 4、力矩区间 [-1,1]，所有位置均满足闭区间。Number('0.99999999999999999') === 1，
+// 双精度视图下首步余量差（严格 1e-17）已被抹掉；必须凭录入原文按十进制精确
+// 比较余量：选 S 首步余量严格为正，优先于零代价的 R，返回 1,0,0,0。
+const highPrecisionArmScenario: Scenario = {
+  rails: [
+    { id: 'R', name: 'R', coordinate: 1, coordinateText: '1' },
+    { id: 'S', name: 'S', coordinate: 1, coordinateText: '0.99999999999999999' },
+    { id: 'Z1', name: 'Z1', coordinate: 0, coordinateText: '0' },
+    { id: 'Z2', name: 'Z2', coordinate: 0, coordinateText: '0' },
+  ],
+  blocks: [
+    { id: 'b1', name: 'b1', mass: 1, options: [{ railId: 'R', cost: 0 }, { railId: 'S', cost: 1 }] },
+    { id: 'b2', name: 'b2', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+    { id: 'b3', name: 'b3', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+    { id: 'b4', name: 'b4', mass: 1, options: [{ railId: 'Z1', cost: 0 }, { railId: 'Z2', cost: 0 }] },
+  ],
+  limits: { maxLoad: 4, minTorque: -1, maxTorque: 1 },
+};
+
+const r9 = adjudicate(highPrecisionArmScenario);
+check(r9.feasible, '裁决模块：高精度力臂场景应判定为可行');
+if (r9.feasible) {
+  const p = r9.plan;
+  check(p.steps.length === 4, '高精度力臂：完整方案应覆盖四块配重（每块恰用一次）');
+  check(
+    p.steps.map((s) => s.optionIndex).join(',') === '1,0,0,0',
+    `高精度力臂：b1 须选余量严格更高（1e-17）的 S，返回 1,0,0,0（实际 ${p.steps
+      .map((s) => s.optionIndex)
+      .join(',')}）`,
+  );
+  check(
+    p.steps.map((s) => `${s.blockIndex}@${s.railId}`).join(' ') === '0@S 1@Z1 2@Z1 3@Z1',
+    '高精度力臂：挂装位置与次序应为 b1@S → b2@Z1 → b3@Z1 → b4@Z1',
+  );
+  check(p.totalCost === 1, `高精度力臂：余量差优先，总代价应为 1（实际 ${p.totalCost}）`);
+  check(
+    p.minTorqueMargin > 0 && p.minTorqueMargin === 1e-17,
+    `高精度力臂：最小力矩余量应严格为按录入值计算的 1e-17（实际 ${p.minTorqueMargin}）`,
+  );
+  check(
+    p.steps.every((s) => s.cumulativeMass <= 4 && s.cumulativeTorque >= -1 && s.cumulativeTorque <= 1),
+    '高精度力臂：每个前缀状态均满足载荷与力矩闭区间',
+  );
+}
+
+// 高精度力臂的并列对照：R、S 力臂都录入 1（余量真正相等，均为 0），
+// 成本决胜须选零代价的 R，返回 0,0,0,0。
+const highPrecisionArmTieScenario: Scenario = {
+  ...highPrecisionArmScenario,
+  rails: highPrecisionArmScenario.rails.map((r) =>
+    r.id === 'S' ? { ...r, coordinateText: '1' } : r,
+  ),
+};
+const r10 = adjudicate(highPrecisionArmTieScenario);
+check(r10.feasible, '裁决模块：高精度力臂并列对照场景应判定为可行');
+if (r10.feasible) {
+  check(
+    r10.plan.steps.map((s) => s.optionIndex).join(',') === '0,0,0,0' && r10.plan.totalCost === 0,
+    `高精度力臂并列：余量真相等时成本决胜须选零代价的 R，返回 0,0,0,0（实际 ${r10.plan.steps
+      .map((s) => s.optionIndex)
+      .join(',')}，代价 ${r10.plan.totalCost}）`,
   );
 }
 

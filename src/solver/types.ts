@@ -3,6 +3,13 @@ export interface RailPosition {
   id: string;
   name: string;
   coordinate: number;
+  /**
+   * 录入力臂的十进制原文（可选）。力矩余量的精确比较以此为准：
+   * 两个不同的录入值可能舍入为同一个双精度 number（如 "0.99999999999999999"
+   * 与 "1"），此时力矩余量 1e-17 的真实差额只能凭原文保留；缺省时退回由
+   * coordinate 的最短往返表示恢复。
+   */
+  coordinateText?: string;
 }
 
 /** 某块配重的一个可挂入选项：挂到指定导轨位置的安装代价。 */
